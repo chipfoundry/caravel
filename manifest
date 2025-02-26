@@ -1,3 +1,6 @@
+f60c274ab22389e0e5d6c6692af2b8d9731a40c6  scripts/compositor.py
+731116709a44d13225170acc83cd34ff9e00fa39  scripts/generate_fill.py
+b8b8dd779cbf6f2583188d2b92feddddfef4847f  scripts/set_user_id.py
 5b0e67cbc4fd8ee8edeb380102e7e7ae07796bcc  verilog/rtl/__openframe_project_wrapper.v
 535d0592c0b1349489b6b86fd5449f9d1d81482e  verilog/rtl/__uprj_analog_netlists.v
 87735eb5981740ca4d4b48e6b0321c8bb0023800  verilog/rtl/__uprj_netlists.v
@@ -51,6 +54,3 @@ b53c154e6acaf44e858c936c8027d0229608676e  verilog/rtl/pads.v
 b9d6114a5067a04dd59cdd46fb988591c16743ce  verilog/rtl/spare_logic_block.v
 9178c87e3d5196fd3e6abae6fc310e1b663ade0e  verilog/rtl/toplevel_cocotb.v
 8f0bec01c914efe790a09ffe62bbfe0781069e35  verilog/rtl/xres_buf.v
-b8b8dd779cbf6f2583188d2b92feddddfef4847f  scripts/set_user_id.py
-731116709a44d13225170acc83cd34ff9e00fa39  scripts/generate_fill.py
-dff8adfb05bedf96f86e16a18ce3cd5818d6fb78  scripts/compositor.py

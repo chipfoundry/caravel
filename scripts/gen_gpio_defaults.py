@@ -68,6 +68,7 @@ import sys
 import re
 import glob
 import subprocess
+import gzip
 
 def usage():
     print('Usage:')
@@ -80,6 +81,22 @@ def usage():
     print('  The file "user_defines.v" must exist in verilog/rtl/ relative to')
     print('  <path_to_project>.')
     return 0
+
+def smart_open(filename, mode="rt"):
+    """
+    Opens a file normally if uncompressed, or with gzip if it’s a .gz file.
+
+    Args:
+        filename (str): Path to the file.
+        mode (str): File mode ('rt' for text, 'rb' for binary, etc.).
+
+    Returns:
+        File object (either normal open or gzip open).
+    """
+    if filename.endswith(".gz"):
+        return gzip.open(filename, mode)
+    else:
+        return open(filename, mode)
 
 if __name__ == '__main__':
 
@@ -191,7 +208,7 @@ if __name__ == '__main__':
     lly_one  = []
     urx_one  = []
     ury_one  = []
-    
+
     zero_string = []
     one_string = []
 
@@ -351,14 +368,15 @@ if __name__ == '__main__':
         print('Test only:  Caravel core layout:')
 
     # Check for compressed layout
-    is_compressed = False
-    if not os.path.isfile(caravel_path + '/mag/caravel_core.mag'):
-        if os.path.isfile(caravel_path + '/mag/caravel_core.mag.gz'):
-            is_compressed = True
-            print('Uncompressing caravel_core.mag')
-            subprocess.run(['gunzip', caravel_path + '/mag/caravel_core.mag.gz'])
+    if os.path.isfile(caravel_path + '/mag/caravel_core.mag'):
+        caravel_core_magfile = caravel_path + '/mag/caravel_core.mag'
+    elif os.path.isfile(caravel_path + '/mag/caravel_core.mag.gz'):
+        caravel_core_magfile = caravel_path + '/mag/caravel_core.mag.gz'
+    else:
+        print(f'  Could not find {caravel_path}/mag/caravel_core.mag[.gz]')
+        sys.exit(2)
 
-    with open(caravel_path + '/mag/caravel_core.mag', 'r') as ifile:
+    with smart_open(caravel_core_magfile, 'rt') as ifile:
         maglines = ifile.read().splitlines()
         outlines = []
         for magline in maglines:
@@ -391,11 +409,6 @@ if __name__ == '__main__':
         with open(magpath + '/caravel_core.mag', 'w') as ofile:
             for outline in outlines:
                 print(outline, file=ofile)
-
-    if is_compressed:
-        print('Compressing caravel_core.mag')
-        subprocess.run(['gzip', '-n', '--best', caravel_path +
-		'/mag/caravel_core.mag'])
 
     # Do the same to the core gate-level verilog
 
@@ -439,7 +452,17 @@ if __name__ == '__main__':
 
     if testmode:
         print('Test only:  Caravan layout:')
-    with open(caravel_path + '/mag/caravan_core.mag', 'r') as ifile:
+
+    # Check for compressed layout
+    if os.path.isfile(caravel_path + '/mag/caravan_core.mag'):
+        caravan_core_magfile = caravel_path + '/mag/caravan_core.mag'
+    elif os.path.isfile(caravel_path + '/mag/caravan_core.mag.gz'):
+        caravan_core_magfile = caravel_path + '/mag/caravan_core.mag.gz'
+    else:
+        print(f'  Could not find {caravel_path}/mag/caravan_core.mag[.gz]')
+        sys.exit(2)
+
+    with smart_open(caravan_core_magfile, 'rt') as ifile:
         maglines = ifile.read().splitlines()
         outlines = []
         for magline in maglines:

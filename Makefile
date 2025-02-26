@@ -28,6 +28,7 @@ ARCHIVE_EXT ?= gz
 
 # Needed to rebuild archives that were previously split
 SPLIT_FILES := $(shell find . -type f -name "*.$(ARCHIVE_EXT).00.split")
+SPLIT_FILES_ARCHIVES := $(basename $(basename $(SPLIT_FILES)))
 SPLIT_FILES_SOURCES := $(basename $(basename $(basename $(SPLIT_FILES))))
 
 # Needed to uncompress the existing archives
@@ -84,9 +85,6 @@ UPRJ_ROOT ?= $(shell pwd)
 # MANAGEMENT AREA ROOT
 MGMT_AREA_ROOT ?= $(shell pwd)/mgmt_core_wrapper 
 
-# Build tasks such as make ship, make generate_fill, make set_user_id, make final run in the foreground (1) or background (0)
-FOREGROUND ?= 1
-
 # Ensure commands which are piped through tee return the correct exit code
 # to make
 SHELL=/bin/bash -o pipefail
@@ -97,26 +95,16 @@ STD_CELL_LIBRARY ?= sky130_fd_sc_hd
 SPECIAL_VOLTAGE_LIBRARY ?= sky130_fd_sc_hvl
 IO_LIBRARY ?= sky130_fd_io
 PRIMITIVES_LIBRARY ?= sky130_fd_pr
-SKYWATER_COMMIT ?= f70d8ca46961ff92719d8870a18a076370b85f6c
 OPEN_PDKS_COMMIT ?= 12df12e2e74145e31c5a13de02f9a1e176b56e67
 # = 1.0.303
-PDK_MAGIC_COMMIT ?= 085131b090cb511d785baf52a10cf6df8a657d44
-# = 8.3.294
 
 .DEFAULT_GOAL := ship
 # We need portable GDS_FILE pointers...
 .PHONY: ship
-ship: check-env uncompress uncompress-caravel
-ifeq ($(FOREGROUND),1)
+ship: check-env unsplit unsplit-caravel
 	@echo "Running make ship in the foreground..."
 	$(MAKE) -f $(CARAVEL_ROOT)/Makefile __ship
 	@echo "Make ship completed." 2>&1 | tee -a ./signoff/build/make_ship.out
-else
-	@echo "Running make ship in the background..."
-	nohup $(MAKE) -f $(CARAVEL_ROOT)/Makefile __ship >/dev/null 2>&1 &
-	tail -f signoff/build/make_ship.out
-	@echo "Make ship completed."  2>&1 | tee -a ./signoff/build/make_ship.out
-endif
 
 __ship:
 	@echo "###############################################"
@@ -127,6 +115,7 @@ __ship:
 		random seed `$(CARAVEL_ROOT)/scripts/set_user_id.py -report`; \
 		drc off; \
 		crashbackups stop; \
+		locking disable; \
 		addpath hexdigits; \
 		addpath $(MCW_ROOT)/mag; \
 		addpath $(UPRJ_ROOT)/mag; \
@@ -151,21 +140,12 @@ __ship:
 	@cd $(CARAVEL_ROOT)/mag && PDKPATH=${PDK_ROOT}/$(PDK) MAGTYPE=mag magic -noc -dnull -rcfile ./.magicrc $(UPRJ_ROOT)/mag/mag2gds_caravel.tcl 2>&1 | tee $(UPRJ_ROOT)/signoff/build/make_ship.out
 ###	@rm $(UPRJ_ROOT)/mag/mag2gds_caravel.tcl
 
-truck: check-env uncompress uncompress-caravel
-ifeq ($(FOREGROUND),1)
+truck: check-env unsplit unsplit-caravel
 	@echo "Running make truck in the foreground..."
 	mkdir -p ./signoff
 	mkdir -p ./build
 	$(MAKE) -f $(CARAVEL_ROOT)/Makefile __truck
 	@echo "Make truck completed." 2>&1 | tee -a ./signoff/build/make_truck.out
-else
-	@echo "Running make truck in the background..."
-	mkdir -p ./signoff
-	mkdir -p ./build
-	nohup $(MAKE) -f $(CARAVEL_ROOT)/Makefile __truck >/dev/null 2>&1 &
-	tail -f signoff/build/make_truck.out
-	@echo "Make truck completed."  2>&1 | tee -a ./signoff/build/make_truck.out
-endif
 
 __truck: 
 	@echo "###############################################"
@@ -176,6 +156,7 @@ __truck:
 		random seed `$(CARAVEL_ROOT)/scripts/set_user_id.py -report`; \
 		drc off; \
 		crashbackups stop; \
+		locking disable; \
 		addpath hexdigits; \
 		addpath $(MCW_ROOT)/mag; \
 		addpath $(UPRJ_ROOT)/mag; \
@@ -201,17 +182,10 @@ __truck:
 ###	@rm $(UPRJ_ROOT)/mag/mag2gds_caravan.tcl
 
 .PHONY: openframe
-openframe: check-env uncompress uncompress-caravel
-ifeq ($(FOREGROUND),1)
+openframe: check-env unsplit unsplit-caravel
 	@echo "Running make openframe in the foreground..."
 	$(MAKE) -f $(CARAVEL_ROOT)/Makefile __openframe
 	@echo "Make openframe completed." 2>&1 | tee -a ./signoff/build/make_openframe.out
-else
-	@echo "Running make openframe in the background..."
-	nohup $(MAKE) -f $(CARAVEL_ROOT)/Makefile __openframe >/dev/null 2>&1 &
-	tail -f signoff/build/make_openframe.out
-	@echo "Make openframe completed."  2>&1 | tee -a ./signoff/build/make_openframe.out
-endif
 
 __openframe:
 	@echo "###############################################"
@@ -221,6 +195,7 @@ __openframe:
 	@echo "\
 		drc off; \
 		crashbackups stop; \
+		locking disable; \
 		addpath hexdigits; \
 		addpath $(UPRJ_ROOT)/mag; \
 		load openframe_project_wrapper; \
@@ -304,62 +279,48 @@ uncompress-caravel:
 	cd $(CARAVEL_ROOT) && \
 	$(MAKE) uncompress
 
+.SECONDEXPANSION:
+$(SPLIT_FILES_ARCHIVES): %: $$(sort $$(wildcard %.*.split))
+	@cat $? > $@
+	@rm $?
+	@echo "$? -> $@"
+
+.PHONY: unsplit
+unsplit: $(SPLIT_FILES_ARCHIVES)
+	@echo "All split files have been combined!"
+
+# Needed for targets that are run from UPRJ_ROOT for which caravel isn't submoduled.
+.PHONY: unsplit-caravel
+unsplit-caravel:
+	cd $(CARAVEL_ROOT) && \
+	$(MAKE) unsplit
+
 # Digital Wrapper
 # verify that the wrapper was respected
-xor-wrapper: uncompress uncompress-caravel
-### first erase the user's user_project_wrapper.gds
-	sh $(CARAVEL_ROOT)/utils/erase_box.sh gds/user_project_wrapper.gds 0 0 2920 3520
-### do the same for the empty wrapper
-	sh $(CARAVEL_ROOT)/utils/erase_box.sh $(CARAVEL_ROOT)/gds/user_project_wrapper_empty.gds 0 0 2920 3520
-	mkdir -p signoff/user_project_wrapper_xor
-### XOR the two resulting layouts
-	sh $(CARAVEL_ROOT)/utils/xor.sh \
-		$(CARAVEL_ROOT)/gds/user_project_wrapper_empty_erased.gds gds/user_project_wrapper_erased.gds \
-		user_project_wrapper user_project_wrapper.xor.xml
-	sh $(CARAVEL_ROOT)/utils/xor.sh \
-		$(CARAVEL_ROOT)/gds/user_project_wrapper_empty_erased.gds gds/user_project_wrapper_erased.gds \
-		user_project_wrapper gds/user_project_wrapper.xor.gds > signoff/user_project_wrapper_xor/xor.log 
-	rm $(CARAVEL_ROOT)/gds/user_project_wrapper_empty_erased.gds gds/user_project_wrapper_erased.gds
-	mv gds/user_project_wrapper.xor.gds gds/user_project_wrapper.xor.xml signoff/user_project_wrapper_xor
-	python $(CARAVEL_ROOT)/utils/parse_klayout_xor_log.py \
-		-l signoff/user_project_wrapper_xor/xor.log \
-		-o signoff/user_project_wrapper_xor/total.txt
-### screenshot the result for convenience
-	sh $(CARAVEL_ROOT)/utils/scrotLayout.sh \
-		$(PDK_ROOT)/$(PDK)/libs.tech/klayout/$(PDK).lyt \
-		signoff/user_project_wrapper_xor/user_project_wrapper.xor.gds
-	@cat signoff/user_project_wrapper_xor/total.txt
+.PHONY: xor-wrapper
+xor-wrapper:
+	@echo "The xor-wrapper target has been removed."
+	@echo "This check is part of mpw_precheck."
+	@exit 1
 
 # Analog Wrapper
 # verify that the wrapper was respected
-xor-analog-wrapper: uncompress uncompress-caravel
-### first erase the user's user_project_wrapper.gds
-	sh $(CARAVEL_ROOT)/utils/erase_box.sh gds/user_analog_project_wrapper.gds 0 0 2920 3520 -8 -8 
-### do the same for the empty wrapper
-	sh $(CARAVEL_ROOT)/utils/erase_box.sh $(CARAVEL_ROOT)/gds/user_analog_project_wrapper_empty.gds 0 0 2920 3520 -8 -8 
-	mkdir -p signoff/user_analog_project_wrapper_xor
-### XOR the two resulting layouts
-	sh $(CARAVEL_ROOT)/utils/xor.sh \
-		$(CARAVEL_ROOT)/gds/user_analog_project_wrapper_empty_erased.gds gds/user_analog_project_wrapper_erased.gds \
-		user_analog_project_wrapper user_analog_project_wrapper.xor.xml
-	sh $(CARAVEL_ROOT)/utils/xor.sh \
-		$(CARAVEL_ROOT)/gds/user_analog_project_wrapper_empty_erased.gds gds/user_analog_project_wrapper_erased.gds \
-		user_analog_project_wrapper gds/user_analog_project_wrapper.xor.gds > signoff/user_analog_project_wrapper_xor/xor.log 
-	rm $(CARAVEL_ROOT)/gds/user_analog_project_wrapper_empty_erased.gds gds/user_analog_project_wrapper_erased.gds
-	mv gds/user_analog_project_wrapper.xor.gds gds/user_analog_project_wrapper.xor.xml signoff/user_analog_project_wrapper_xor
-	python $(CARAVEL_ROOT)/utils/parse_klayout_xor_log.py \
-		-l signoff/user_analog_project_wrapper_xor/xor.log \
-		-o signoff/user_analog_project_wrapper_xor/total.txt
-### screenshot the result for convenience
-	sh $(CARAVEL_ROOT)/utils/scrotLayout.sh \
-		$(PDK_ROOT)/$(PDK)/libs.tech/klayout/$(PDK).lyt \
-		signoff/user_analog_project_wrapper_xor/user_analog_project_wrapper.xor.gds
-	@cat signoff/user_analog_project_wrapper_xor/total.txt
+.PHONY: xor-analog-wrapper
+xor-analog-wrapper:
+	@echo "The xor-analog-wrapper target has been removed."
+	@echo "This check is part of mpw_precheck."
+	@exit 1
 
+OPENLANE_BLOCKS = $(shell cd openlane && find * -maxdepth 0 -type d)
 # LVS
-BLOCKS = $(shell cd openlane && find * -maxdepth 0 -type d)
-LVS_BLOCKS = $(foreach block, $(BLOCKS), lvs-$(block))
+LVS_BLOCKS = $(foreach block, $(OPENLANE_BLOCKS), lvs-$(block))
 $(LVS_BLOCKS): lvs-% : ./mag/%.mag ./verilog/gl/%.v
+	@echo "The lvs-* targets have been renamed to lvs-mag-*"
+	@exit 1
+
+LVS_MAG_BLOCKS = $(foreach block, $(OPENLANE_BLOCKS), lvs-mag-$(block))
+$(LVS_MAG_BLOCKS): lvs-mag-% : ./mag/%.mag ./verilog/gl/%.v
+	@echo "Warning: the lvs-mag-* recipes may be out-of-date and are not officially supported."
 	echo "Extracting $*"
 	# Clear result directories 
 	rm -rf ./mag/tmp
@@ -407,8 +368,9 @@ $(LVS_BLOCKS): lvs-% : ./mag/%.mag ./verilog/gl/%.v
 	@awk '/^NET mismatches/,0' ./spi/lvs/tmp/$*.v_comp.out
 
 
-LVS_GDS_BLOCKS = $(foreach block, $(BLOCKS), lvs-gds-$(block))
+LVS_GDS_BLOCKS = $(foreach block, $(OPENLANE_BLOCKS), lvs-gds-$(block))
 $(LVS_GDS_BLOCKS): lvs-gds-% : ./gds/%.gds ./verilog/gl/%.v
+	@echo "Warning: the lvs-gds-* recipes may be out-of-date and are not officially supported."
 	echo "Extracting $*"
 	# Clear result directories 
 	rm -rf ./gds/tmp
@@ -448,8 +410,9 @@ $(LVS_GDS_BLOCKS): lvs-gds-% : ./gds/%.gds ./verilog/gl/%.v
 
 
 # connect-by-label is enabled here!
-LVS_MAGLEF_BLOCKS = $(foreach block, $(BLOCKS), lvs-maglef-$(block))
+LVS_MAGLEF_BLOCKS = $(foreach block, $(OPENLANE_BLOCKS), lvs-maglef-$(block))
 $(LVS_MAGLEF_BLOCKS): lvs-maglef-% : ./mag/%.mag ./verilog/gl/%.v
+	@echo "Warning: the lvs-maglef-* recipes may be out-of-date and are not officially supported."
 	echo "Extracting $*"
 	mkdir -p ./maglef/tmp
 	echo "load $* -dereference;\
@@ -486,8 +449,7 @@ $(LVS_MAGLEF_BLOCKS): lvs-maglef-% : ./mag/%.mag ./verilog/gl/%.v
 	@awk '/^NET mismatches/,0' ./spi/lvs/tmp/$*.v_comp.out
 
 # DRC
-BLOCKS = $(shell cd openlane && find * -maxdepth 0 -type d)
-DRC_BLOCKS = $(foreach block, $(BLOCKS), drc-$(block))
+DRC_BLOCKS = $(foreach block, $(OPENLANE_BLOCKS), drc-$(block))
 $(DRC_BLOCKS): drc-% : ./gds/%.gds
 	echo "Running DRC on $*"
 	mkdir -p ./gds/tmp
@@ -495,8 +457,7 @@ $(DRC_BLOCKS): drc-% : ./gds/%.gds
 	@echo "DRC result: ./gds/tmp/$*.drc"
 
 # Antenna
-BLOCKS = $(shell cd openlane && find * -maxdepth 0 -type d)
-ANTENNA_BLOCKS = $(foreach block, $(BLOCKS), antenna-$(block))
+ANTENNA_BLOCKS = $(foreach block, $(OPENLANE_BLOCKS), antenna-$(block))
 $(ANTENNA_BLOCKS): antenna-% : ./gds/%.gds
 	echo "Running Antenna Checks on $*"
 	mkdir -p ./gds/tmp
@@ -505,9 +466,8 @@ $(ANTENNA_BLOCKS): antenna-% : ./gds/%.gds
 	@echo "Antenna result: ./gds/tmp/$*.antenna"
 
 # MAG2GDS
-BLOCKS = $(shell cd openlane && find * -maxdepth 0 -type d)
-MAG_BLOCKS = $(foreach block, $(BLOCKS), mag2gds-$(block))
-$(MAG_BLOCKS): mag2gds-% : ./mag/%.mag uncompress
+MAG2GDS_BLOCKS = $(foreach block, $(OPENLANE_BLOCKS), mag2gds-$(block))
+$(MAG2GDS_BLOCKS): mag2gds-% : ./mag/%.mag unsplit unsplit-caravel
 	echo "Converting mag file $* to GDS..."
 	echo "addpath $(CARAVEL_ROOT)/mag/hexdigits;\
 		addpath ${PDKPATH}/libs.ref/sky130_ml_xx_hd/mag;\
@@ -524,9 +484,8 @@ $(MAG_BLOCKS): mag2gds-% : ./mag/%.mag uncompress
 	mv -f ./mag/$*.gds ./gds/
 
 # MAG2LEF 
-BLOCKS = $(shell cd openlane && find * -maxdepth 0 -type d)
-MAG_BLOCKS = $(foreach block, $(BLOCKS), mag2lef-$(block))
-$(MAG_BLOCKS): mag2lef-% : ./mag/%.mag uncompress
+MAG2LEF_BLOCKS = $(foreach block, $(OPENLANE_BLOCKS), mag2lef-$(block))
+$(MAG2LEF_BLOCKS): mag2lef-% : ./mag/%.mag unsplit unsplit-caravel
 	echo "Converting mag file $* to LEF..."
 	echo "addpath $(CARAVEL_ROOT)/mag/hexdigits;\
 		addpath ${PDKPATH}/libs.ref/sky130_ml_xx_hd/mag;\
@@ -541,8 +500,8 @@ $(MAG_BLOCKS): mag2lef-% : ./mag/%.mag uncompress
 
 # MAG2DEF 
 # BLOCKS = $(shell cd openlane && find * -maxdepth 0 -type d)
-# MAG_BLOCKS = $(foreach block, $(BLOCKS), mag2lef-$(block))
-# $(MAG_BLOCKS): mag2lef-% : ./mag/%.mag uncompress
+# MAG_BLOCKS = $(foreach block, $(OPENLANE_BLOCKS), mag2lef-$(block))
+# $(MAG_BLOCKS): mag2lef-% : ./mag/%.mag unsplit unsplit-caravel
 # 	echo "Converting mag file $* to DEF..."
 # 	echo "addpath $(CARAVEL_ROOT)/mag/hexdigits;\
 # 		addpath ${PDKPATH}/libs.ref/sky130_ml_xx_hd/mag;\
@@ -560,8 +519,7 @@ help:
 	@$(MAKE) -pRrq -f $(lastword $(MAKEFILE_LIST)) : 2>/dev/null | awk -v RS= -F: '/^# File/,/^# Finished Make data base/ {if ($$1 !~ "^[#.]") {print $$1}}' | sort | egrep -v -e '^[^[:alnum:]]' -e '^$@$$'
 
 # RCX Extraction
-BLOCKS = $(shell cd openlane && find * -maxdepth 0 -type d)
-RCX_BLOCKS = $(foreach block, $(BLOCKS), rcx-$(block))
+RCX_BLOCKS = $(foreach block, $(OPENLANE_BLOCKS), rcx-$(block))
 OPENLANE_IMAGE_NAME=efabless/openlane:2021.11.25_01.26.14
 $(RCX_BLOCKS): rcx-% : ./def/%.def 
 	echo "Running RC Extraction on $*"
@@ -680,479 +638,28 @@ $(RCX_BLOCKS): rcx-% : ./def/%.def
 	sh -c "cd /caravel; openroad -exit ./def/tmp/sta_$*.tcl |& tee ./def/tmp/sta_$*.log" 
 
 
-caravel_timing_typ: ./def/caravel.def ./sdc/caravel.sdc ./verilog/gl/caravel.v check-mcw
-	mkdir -p ./def/tmp
-## Run OpenSTA
-	echo "\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(STD_CELL_LIBRARY)/lib/$(STD_CELL_LIBRARY)__tt_025C_1v80.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/sky130_sram_macros/lib/sky130_sram_2kbyte_1rw1r_32x512_8_TT_1p8V_25C.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(SPECIAL_VOLTAGE_LIBRARY)/lib/$(SPECIAL_VOLTAGE_LIBRARY)__tt_025C_3v30.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(SPECIAL_VOLTAGE_LIBRARY)/lib/$(SPECIAL_VOLTAGE_LIBRARY)__tt_025C_3v30_lv1v80.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_gpiov2_tt_tt_025C_1v80_3v30.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_ground_hvc_wpad_tt_025C_1v80_3v30_3v30.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_ground_lvc_wpad_tt_025C_1v80_3v30.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_ground_lvc_wpad_tt_100C_1v80_3v30.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_power_lvc_wpad_tt_025C_1v80_3v30_3v30.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_xres4v2_tt_tt_025C_1v80_3v30.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__gpiov2_pad_tt_tt_025C_1v80_3v30.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vccd_lvc_clamped_pad_tt_025C_1v80_3v30_3v30.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vdda_hvc_clamped_pad_tt_025C_1v80_3v30_3v30.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vssa_hvc_clamped_pad_tt_025C_1v80_3v30_3v30.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vssd_lvc_clamped3_pad_tt_025C_1v80_3v30.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vccd_lvc_clamped3_pad_tt_025C_1v80_3v30_3v30.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vssd_lvc_clamped_pad_tt_025C_1v80_3v30.lib;\
-		read_verilog $(MCW_ROOT)/verilog/gl/mgmt_core.v;\
-		read_verilog $(MCW_ROOT)/verilog/gl/DFFRAM.v;\
-		read_verilog $(MCW_ROOT)/verilog/gl/mgmt_core_wrapper.v;\
-		read_verilog ./verilog/gl/caravel_clocking.v;\
-		read_verilog ./verilog/gl/digital_pll.v;\
-		read_verilog ./verilog/gl/housekeeping.v;\
-		read_verilog ./verilog/gl/gpio_logic_high.v;\
-		read_verilog ./verilog/gl/gpio_control_block.v;\
-		read_verilog ./verilog/gl/gpio_defaults_block.v;\
-		read_verilog ./verilog/gl/gpio_defaults_block_0403.v;\
-		read_verilog ./verilog/gl/gpio_defaults_block_1803.v;\
-		read_verilog ./verilog/gl/mgmt_protect_hv.v;\
-		read_verilog ./verilog/gl/mprj_logic_high.v;\
-		read_verilog ./verilog/gl/mprj2_logic_high.v;\
-		read_verilog ./verilog/gl/mgmt_protect.v;\
-		read_verilog ./verilog/gl/user_id_programming.v;\
-		read_verilog ./verilog/gl/xres_buf.v;\
-		read_verilog ./verilog/gl/spare_logic_block.v;\
-		read_verilog ./verilog/gl/chip_io.v;\
-		read_verilog ./verilog/gl/caravel.v;\
-		link_design caravel;\
-		read_spef -path soc/DFFRAM_0 $(MCW_ROOT)/spef/DFFRAM.spef;\
-		read_spef -path soc/core $(MCW_ROOT)/spef/mgmt_core.spef;\
-		read_spef -path soc $(MCW_ROOT)/spef/mgmt_core_wrapper.spef;\
-		read_spef -path padframe ./spef/chip_io.spef;\
-		read_spef -path rstb_level ./spef/xres_buf.spef;\
-		read_spef -path pll ./spef/digital_pll.spef;\
-		read_spef -path housekeeping ./spef/housekeeping.spef;\
-		read_spef -path mgmt_buffers/powergood_check ./spef/mgmt_protect_hv.spef;\
-		read_spef -path mgmt_buffers/mprj_logic_high_inst ./spef/mprj_logic_high.spef;\
-		read_spef -path mgmt_buffers/mprj2_logic_high_inst ./spef/mprj2_logic_high.spef;\
-		read_spef -path mgmt_buffers ./spef/mgmt_protect.spef;\
-		read_spef -path \gpio_control_bidir_1[0] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_bidir_1[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_bidir_2[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_bidir_2[2] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[0] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[10] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[2] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[3] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[4] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[5] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[6] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[7] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[8] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[9] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[0] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[2] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[3] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[4] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[5] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[0] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[10] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[11] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[12] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[13] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[14] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[15] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[2] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[3] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[4] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[5] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[6] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[7] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[8] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[9] ./spef/gpio_control_block.spef;\
-		read_spef -path gpio_defaults_block_0 ./spef/gpio_defaults_block_1803.spef;\
-		read_spef -path gpio_defaults_block_1 ./spef/gpio_defaults_block_1803.spef;\
-		read_spef -path gpio_defaults_block_2 ./spef/gpio_defaults_block_0403.spef;\
-		read_spef -path gpio_defaults_block_3 ./spef/gpio_defaults_block_0403.spef;\
-		read_spef -path gpio_defaults_block_4 ./spef/gpio_defaults_block_0403.spef;\
-		read_spef -path gpio_defaults_block_5 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_6 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_7 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_8 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_9 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_10 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_11 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_12 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_13 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_14 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_15 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_16 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_17 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_18 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_19 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_20 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_21 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_22 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_23 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_24 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_25 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_26 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_27 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_28 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_29 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_30 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_31 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_32 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_33 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_34 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_35 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_36 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_37 ./spef/gpio_defaults_block.spef;\
-		read_spef ./spef/caravel.spef;\
-		read_sdc -echo ./sdc/caravel.sdc;\
-		report_checks -path_delay min -fields {slew cap input nets fanout} -format full_clock_expanded -group_count 50;\
-		report_checks -path_delay max -fields {slew cap input nets fanout} -format full_clock_expanded -group_count 50;\
-		report_worst_slack -max ;\
-		report_worst_slack -min ;\
-		echo \" Management Area Interface \";\
-		report_checks -to soc/core_clk -unconstrained -group_count 1;\
-		echo \" User project Interface \";\
-		report_checks -to mprj/wb_clk_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wb_rst_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wbs_cyc_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wbs_stb_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wbs_we_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wbs_sel_i[*] -unconstrained -group_count 4;\
-		report_checks -to mprj/wbs_adr_i[*] -unconstrained -group_count 32;\
-		report_checks -to mprj/io_in[*] -unconstrained -group_count 32;\
-		report_checks -to mprj/user_clock2 -unconstrained -group_count 32;\
-		report_checks -to mprj/user_irq[*] -unconstrained -group_count 32;\
-		report_checks -to mprj/la_data_in[*] -unconstrained -group_count 128;\
-		report_checks -to mprj/la_oenb[*] -unconstrained -group_count 128;\
-		echo \" Flash output Interface \";\
-		report_checks -to flash_clk -group_count 1;\
-		report_checks -to flash_csb -group_count 1;\
-		report_checks -to flash_io0 -group_count 1;\
-		" > ./def/tmp/caravel_timing_typ.tcl 
-	sta -exit ./def/tmp/caravel_timing_typ.tcl | tee ./signoff/caravel/caravel_timing_typ.log 
+.PHONY: caravel_timing_typ caravel_timing_typ caravel_timing_slow
+caravel_timing_typ:
+	@echo "The caravel_timing_typ: target has been removed."
+	@echo "Please use the caravel-sta target in the caravel_user_project/Makefile"
+	@exit 1
 
-caravel_timing_slow: ./def/caravel.def ./sdc/caravel.sdc ./verilog/gl/caravel.v check-mcw
-	mkdir -p ./def/tmp
-## Run OpenSTA
-	echo "\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(STD_CELL_LIBRARY)/lib/$(STD_CELL_LIBRARY)__ss_100C_1v60.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/sky130_sram_macros/lib/sky130_sram_2kbyte_1rw1r_32x512_8_TT_1p8V_25C.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(SPECIAL_VOLTAGE_LIBRARY)/lib/$(SPECIAL_VOLTAGE_LIBRARY)__ss_100C_1v65.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(SPECIAL_VOLTAGE_LIBRARY)/lib/$(SPECIAL_VOLTAGE_LIBRARY)__ss_100C_1v65_lv1v40.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_gpiov2_ss_ss_100C_1v40_1v65.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_ground_hvc_wpad_ss_100C_1v60_3v00_3v00.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_ground_lvc_wpad_ss_100C_1v40_1v65.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_power_lvc_wpad_ss_100C_1v60_3v00_3v00.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_xres4v2_ss_ss_100C_1v40_1v65.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__gpiov2_pad_wrapped_ss_ss_100C_1v60_3v00.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vccd_lvc_clamped_pad_ss_100C_1v60_3v00_3v00.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vdda_hvc_clamped_pad_ss_100C_1v60_3v00_3v00.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vdda_hvc_clamped_pad_ss_100C_1v60_3v00_3v00.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vssd_lvc_clamped3_pad_ss_100C_1v40_1v65.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vccd_lvc_clamped3_pad_ss_100C_1v60_3v00_3v00.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vssd_lvc_clamped_pad_ss_100C_1v60_3v00.lib;\
-		read_verilog $(MCW_ROOT)/verilog/gl/mgmt_core.v;\
-		read_verilog $(MCW_ROOT)/verilog/gl/DFFRAM.v;\
-		read_verilog $(MCW_ROOT)/verilog/gl/mgmt_core_wrapper.v;\
-		read_verilog ./verilog/gl/caravel_clocking.v;\
-		read_verilog ./verilog/gl/digital_pll.v;\
-		read_verilog ./verilog/gl/housekeeping.v;\
-		read_verilog ./verilog/gl/gpio_logic_high.v;\
-		read_verilog ./verilog/gl/gpio_control_block.v;\
-		read_verilog ./verilog/gl/gpio_defaults_block.v;\
-		read_verilog ./verilog/gl/gpio_defaults_block_0403.v;\
-		read_verilog ./verilog/gl/gpio_defaults_block_1803.v;\
-		read_verilog ./verilog/gl/mgmt_protect_hv.v;\
-		read_verilog ./verilog/gl/mprj_logic_high.v;\
-		read_verilog ./verilog/gl/mprj2_logic_high.v;\
-		read_verilog ./verilog/gl/mgmt_protect.v;\
-		read_verilog ./verilog/gl/user_id_programming.v;\
-		read_verilog ./verilog/gl/xres_buf.v;\
-		read_verilog ./verilog/gl/spare_logic_block.v;\
-		read_verilog ./verilog/gl/chip_io.v;\
-		read_verilog ./verilog/gl/caravel.v;\
-		link_design caravel;\
-		read_spef -path soc/DFFRAM_0 $(MCW_ROOT)/spef/DFFRAM.spef;\
-		read_spef -path soc/core $(MCW_ROOT)/spef/mgmt_core.spef;\
-		read_spef -path soc $(MCW_ROOT)/spef/mgmt_core_wrapper.spef;\
-		read_spef -path padframe ./spef/chip_io.spef;\
-		read_spef -path rstb_level ./spef/xres_buf.spef;\
-		read_spef -path pll ./spef/digital_pll.spef;\
-		read_spef -path housekeeping ./spef/housekeeping.spef;\
-		read_spef -path mgmt_buffers/powergood_check ./spef/mgmt_protect_hv.spef;\
-		read_spef -path mgmt_buffers/mprj_logic_high_inst ./spef/mprj_logic_high.spef;\
-		read_spef -path mgmt_buffers/mprj2_logic_high_inst ./spef/mprj2_logic_high.spef;\
-		read_spef -path mgmt_buffers ./spef/mgmt_protect.spef;\
-		read_spef -path \gpio_control_bidir_1[0] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_bidir_1[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_bidir_2[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_bidir_2[2] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[0] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[10] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[2] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[3] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[4] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[5] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[6] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[7] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[8] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[9] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[0] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[2] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[3] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[4] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[5] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[0] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[10] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[11] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[12] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[13] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[14] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[15] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[2] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[3] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[4] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[5] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[6] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[7] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[8] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[9] ./spef/gpio_control_block.spef;\
-		read_spef -path gpio_defaults_block_0 ./spef/gpio_defaults_block_1803.spef;\
-		read_spef -path gpio_defaults_block_1 ./spef/gpio_defaults_block_1803.spef;\
-		read_spef -path gpio_defaults_block_2 ./spef/gpio_defaults_block_0403.spef;\
-		read_spef -path gpio_defaults_block_3 ./spef/gpio_defaults_block_0403.spef;\
-		read_spef -path gpio_defaults_block_4 ./spef/gpio_defaults_block_0403.spef;\
-		read_spef -path gpio_defaults_block_5 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_6 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_7 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_8 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_9 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_10 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_11 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_12 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_13 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_14 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_15 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_16 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_17 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_18 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_19 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_20 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_21 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_22 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_23 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_24 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_25 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_26 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_27 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_28 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_29 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_30 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_31 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_32 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_33 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_34 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_35 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_36 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_37 ./spef/gpio_defaults_block.spef;\
-		read_spef ./spef/caravel.spef;\
-		read_sdc -echo ./sdc/caravel.sdc;\
-		report_checks -path_delay min -fields {slew cap input nets fanout} -format full_clock_expanded -group_count 50;\
-		report_checks -path_delay max -fields {slew cap input nets fanout} -format full_clock_expanded -group_count 50;\
-		report_worst_slack -max ;\
-		report_worst_slack -min ;\
-		echo \" Management Area Interface \";\
-		report_checks -to soc/core_clk -unconstrained -group_count 1;\
-		echo \" User project Interface \";\
-		report_checks -to mprj/wb_clk_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wb_rst_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wbs_cyc_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wbs_stb_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wbs_we_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wbs_sel_i[*] -unconstrained -group_count 4;\
-		report_checks -to mprj/wbs_adr_i[*] -unconstrained -group_count 32;\
-		report_checks -to mprj/io_in[*] -unconstrained -group_count 32;\
-		report_checks -to mprj/user_clock2 -unconstrained -group_count 32;\
-		report_checks -to mprj/user_irq[*] -unconstrained -group_count 32;\
-		report_checks -to mprj/la_data_in[*] -unconstrained -group_count 128;\
-		report_checks -to mprj/la_oenb[*] -unconstrained -group_count 128;\
-		" > ./def/tmp/caravel_timing_slow.tcl 
-	sta -exit ./def/tmp/caravel_timing_slow.tcl | tee ./signoff/caravel/caravel_timing_slow.log 
+caravel_timing_slow:
+	@echo "The caravel_timing_slow: target has been removed."
+	@echo "Please use the caravel-sta target in the caravel_user_project/Makefile"
+	@exit 1
 
-
-caravel_timing_fast: ./def/caravel.def ./sdc/caravel.sdc ./verilog/gl/caravel.v check-mcw
-	mkdir -p ./def/tmp
-## Run OpenSTA
-	echo "\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(STD_CELL_LIBRARY)/lib/$(STD_CELL_LIBRARY)__ff_n40C_1v95.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/sky130_sram_macros/lib/sky130_sram_2kbyte_1rw1r_32x512_8_TT_1p8V_25C.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(SPECIAL_VOLTAGE_LIBRARY)/lib/$(SPECIAL_VOLTAGE_LIBRARY)__ff_n40C_5v50.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(SPECIAL_VOLTAGE_LIBRARY)/lib/$(SPECIAL_VOLTAGE_LIBRARY)__ff_n40C_4v40_lv1v95.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_gpiov2_ff_ff_n40C_1v95_5v50.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_ground_hvc_wpad_ff_n40C_1v95_5v50_5v50.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_ground_lvc_wpad_ff_n40C_1v95_5v50.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_ground_lvc_wpad_ff_n40C_1v95_5v50.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_power_lvc_wpad_ff_n40C_1v95_5v50_5v50.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_fd_io__top_xres4v2_ff_ff_n40C_1v95_5v50.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__gpiov2_pad_wrapped_ff_ff_n40C_1v95_5v50.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vccd_lvc_clamped_pad_ff_n40C_1v95_5v50_5v50.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vdda_hvc_clamped_pad_ff_n40C_1v95_5v50_5v50.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vssa_hvc_clamped_pad_ff_n40C_1v95_5v50_5v50.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vssd_lvc_clamped3_pad_ff_n40C_1v95_5v50.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vccd_lvc_clamped3_pad_ff_n40C_1v95_5v50_5v50.lib;\
-		read_liberty $(PDK_ROOT)/$(PDK)/libs.ref/$(IO_LIBRARY)/lib/sky130_ef_io__vssd_lvc_clamped_pad_ff_n40C_1v95_5v50.lib;\
-		read_verilog $(MCW_ROOT)/verilog/gl/mgmt_core.v;\
-		read_verilog $(MCW_ROOT)/verilog/gl/DFFRAM.v;\
-		read_verilog $(MCW_ROOT)/verilog/gl/mgmt_core_wrapper.v;\
-		read_verilog ./verilog/gl/caravel_clocking.v;\
-		read_verilog ./verilog/gl/digital_pll.v;\
-		read_verilog ./verilog/gl/housekeeping.v;\
-		read_verilog ./verilog/gl/gpio_logic_high.v;\
-		read_verilog ./verilog/gl/gpio_control_block.v;\
-		read_verilog ./verilog/gl/gpio_defaults_block.v;\
-		read_verilog ./verilog/gl/gpio_defaults_block_0403.v;\
-		read_verilog ./verilog/gl/gpio_defaults_block_1803.v;\
-		read_verilog ./verilog/gl/mgmt_protect_hv.v;\
-		read_verilog ./verilog/gl/mprj_logic_high.v;\
-		read_verilog ./verilog/gl/mprj2_logic_high.v;\
-		read_verilog ./verilog/gl/mgmt_protect.v;\
-		read_verilog ./verilog/gl/user_id_programming.v;\
-		read_verilog ./verilog/gl/xres_buf.v;\
-		read_verilog ./verilog/gl/spare_logic_block.v;\
-		read_verilog ./verilog/gl/chip_io.v;\
-		read_verilog ./verilog/gl/caravel.v;\
-		link_design caravel;\
-		read_spef -path soc/DFFRAM_0 $(MCW_ROOT)/spef/DFFRAM.spef;\
-		read_spef -path soc/core $(MCW_ROOT)/spef/mgmt_core.spef;\
-		read_spef -path soc $(MCW_ROOT)/spef/mgmt_core_wrapper.spef;\
-		read_spef -path padframe ./spef/chip_io.spef;\
-		read_spef -path rstb_level ./spef/xres_buf.spef;\
-		read_spef -path pll ./spef/digital_pll.spef;\
-		read_spef -path housekeeping ./spef/housekeeping.spef;\
-		read_spef -path mgmt_buffers/powergood_check ./spef/mgmt_protect_hv.spef;\
-		read_spef -path mgmt_buffers/mprj_logic_high_inst ./spef/mprj_logic_high.spef;\
-		read_spef -path mgmt_buffers/mprj2_logic_high_inst ./spef/mprj2_logic_high.spef;\
-		read_spef -path mgmt_buffers ./spef/mgmt_protect.spef;\
-		read_spef -path \gpio_control_bidir_1[0] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_bidir_1[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_bidir_2[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_bidir_2[2] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[0] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[10] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[2] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[3] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[4] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[5] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[6] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[7] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[8] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1[9] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[0] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[2] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[3] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[4] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_1a[5] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[0] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[10] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[11] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[12] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[13] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[14] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[15] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[1] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[2] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[3] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[4] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[5] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[6] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[7] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[8] ./spef/gpio_control_block.spef;\
-		read_spef -path \gpio_control_in_2[9] ./spef/gpio_control_block.spef;\
-		read_spef -path gpio_defaults_block_0 ./spef/gpio_defaults_block_1803.spef;\
-		read_spef -path gpio_defaults_block_1 ./spef/gpio_defaults_block_1803.spef;\
-		read_spef -path gpio_defaults_block_2 ./spef/gpio_defaults_block_0403.spef;\
-		read_spef -path gpio_defaults_block_3 ./spef/gpio_defaults_block_0403.spef;\
-		read_spef -path gpio_defaults_block_4 ./spef/gpio_defaults_block_0403.spef;\
-		read_spef -path gpio_defaults_block_5 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_6 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_7 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_8 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_9 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_10 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_11 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_12 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_13 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_14 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_15 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_16 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_17 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_18 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_19 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_20 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_21 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_22 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_23 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_24 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_25 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_26 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_27 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_28 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_29 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_30 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_31 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_32 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_33 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_34 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_35 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_36 ./spef/gpio_defaults_block.spef;\
-		read_spef -path gpio_defaults_block_37 ./spef/gpio_defaults_block.spef;\
-		read_spef ./spef/caravel.spef;\
-		read_sdc -echo ./sdc/caravel.sdc;\
-		report_checks -path_delay min -fields {slew cap input nets fanout} -format full_clock_expanded -group_count 50;\
-		report_checks -path_delay max -fields {slew cap input nets fanout} -format full_clock_expanded -group_count 50;\
-		report_worst_slack -max ;\
-		report_worst_slack -min ;\
-		echo \" Management Area Interface \";\
-		report_checks -to soc/core_clk -unconstrained -group_count 1;\
-		echo \" User project Interface \";\
-		report_checks -to mprj/wb_clk_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wb_rst_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wbs_cyc_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wbs_stb_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wbs_we_i -unconstrained -group_count 1;\
-		report_checks -to mprj/wbs_sel_i[*] -unconstrained -group_count 4;\
-		report_checks -to mprj/wbs_adr_i[*] -unconstrained -group_count 32;\
-		report_checks -to mprj/io_in[*] -unconstrained -group_count 32;\
-		report_checks -to mprj/user_clock2 -unconstrained -group_count 32;\
-		report_checks -to mprj/user_irq[*] -unconstrained -group_count 32;\
-		report_checks -to mprj/la_data_in[*] -unconstrained -group_count 128;\
-		report_checks -to mprj/la_oenb[*] -unconstrained -group_count 128;\
-		" > ./def/tmp/caravel_timing_fast.tcl 
-	sta -exit ./def/tmp/caravel_timing_fast.tcl | tee ./signoff/caravel/caravel_timing_fast.log 
+caravel_timing_fast:
+	@echo "The caravel_timing_fast: target has been removed."
+	@echo "Please use the caravel-sta target in the caravel_user_project/Makefile"
+	@exit 1
 
 ###########################################################################
 .PHONY: generate_fill
-generate_fill: check-env check-uid check-project uncompress
-ifeq ($(FOREGROUND),1)
+generate_fill: check-env check-uid check-project unsplit unsplit-caravel
 	@echo "Running generate_fill in the foreground..."
 	$(MAKE) -f $(CARAVEL_ROOT)/Makefile __generate_fill
 	@echo "Generate fill completed." 2>&1 | tee -a ./signoff/build/generate_fill.out
-else
-	@echo "Running generate_fill in the background..."
-	@nohup $(MAKE) -f $(CARAVEL_ROOT)/Makefile __generate_fill >/dev/null 2>&1 &
-	tail -f signoff/build/generate_fill.out
-	@echo "Generate fill completed." | tee -a signoff/build/generate_fill.out
-endif
 
 __generate_fill:
 	@mkdir -p ./signoff/build
@@ -1162,31 +669,19 @@ __generate_fill:
 
 
 .PHONY: final
-final: check-env check-uid check-project uncompress uncompress-caravel
-ifeq ($(FOREGROUND),1)
+final: check-env check-uid check-project unsplit unsplit-caravel
 	$(MAKE) -f $(CARAVEL_ROOT)/Makefile __final
 	@echo "Final build completed." 2>&1 | tee -a ./signoff/build/final_build.out
-else
-	$(MAKE) -f $(CARAVEL_ROOT)/Makefile __final >/dev/null 2>&1 &
-	tail -f signoff/build/final_build.out
-	@echo "Final build completed." 2>&1 | tee -a ./signoff/build/final_build.out
-endif
 
 __final:
-	python3 $(CARAVEL_ROOT)/scripts/compositor.py $(USER_ID) $(PROJECT) $(shell pwd) $(CARAVEL_ROOT)/mag $(shell pwd)/gds -keep
+	python3 $(CARAVEL_ROOT)/scripts/compositor.py $(USER_ID) $(PROJECT) $(shell pwd) $(CARAVEL_ROOT)/mag $(shell pwd)/gds $(MCW_ROOT) -keep 2>&1 | tee ./signoff/build/final_build.out
 	#mv $(CARAVEL_ROOT)/mag/caravel_$(USER_ID).mag ./mag/
 	@rm -rf ./mag/tmp
 
 .PHONY: set_user_id
-set_user_id: check-env check-uid uncompress uncompress-caravel
-ifeq ($(FOREGROUND),1)
+set_user_id: check-env check-uid
 	$(MAKE) -f $(CARAVEL_ROOT)/Makefile __set_user_id
 	@echo "Set user ID completed." 2>&1 | tee -a ./signoff/build/set_user_id.out
-else
-	$(MAKE) -f $(CARAVEL_ROOT)/Makefile __set_user_id >/dev/null 2>&1 &
-	tail -f signoff/build/set_user_id.out
-	@echo "Set user ID completed." 2>&1 | tee -a ./signoff/build/set_user_id.out
-endif
 
 __set_user_id: 
 	mkdir -p ./signoff/build
@@ -1199,15 +694,9 @@ __set_user_id:
 	python3 $(CARAVEL_ROOT)/scripts/set_user_id.py $(USER_ID) $(shell pwd) 2>&1 | tee ./signoff/build/set_user_id.out
 
 .PHONY: gpio_defaults
-gpio_defaults: check-env uncompress uncompress-caravel
-ifeq ($(FOREGROUND),1)
+gpio_defaults: check-env
 	$(MAKE) -f $(CARAVEL_ROOT)/Makefile __gpio_defaults
 	@echo "GPIO defaults completed." 2>&1 | tee -a ./signoff/build/__gpio_defaults.out
-else
-	$(MAKE) -f $(CARAVEL_ROOT)/Makefile __gpio_defaults >/dev/null 2>&1 &
-	tail -f signoff/build/gpio_defaults.out
-	@echo "GPIO defaults completed." 2>&1 | tee -a ./signoff/build/__gpio_defaults.out
-endif
 
 __gpio_defaults:
 	mkdir -p ./signoff/build
@@ -1216,9 +705,8 @@ __gpio_defaults:
 
 .PHONY: update_caravel
 update_caravel:
-	cd caravel/ && \
-		git checkout master && \
-		git pull
+	@echo "The update_caravel target has been removed."
+	@exit 1
 
 ###########################################################################
 
@@ -1281,13 +769,44 @@ pdk: check-env pdk-with-volare
 pdk-with-volare: check-env venv/manifest.txt
 	./venv/bin/volare enable ${OPEN_PDKS_COMMIT}
 
+.PHONY: install-volare
+install-volare:
+	@echo "The install-volare target has been removed."
+	@echo "To delete and reinstall: make -B venv/manifest.txt"
+	@exit 1
+
 .PHONY: clean-pdk
 clean-pdk:
 	rm -rf $(PDK_ROOT)
 
+.PHONY: skywater-pdk
+skywater-pdk:
+	@echo "The skywater-pdk target has been removed."
+	@echo "To install the pdk with volare: make pdk-with-volare"
+	@exit 1
+
+### OPEN_PDKS
+.PHONY: open-pdks
+open-pdks:
+	@echo "The open-pdks target has been removed."
+	@echo "To install the pdk with volare: make pdk-with-volare"
+	@exit 1
+
+.PHONY: sky130
+sky130:
+	@echo "The sky130 target has been removed."
+	@echo "To install the pdk with volare: make pdk-with-volare"
+	@exit 1
+
+.PHONY: gen-sources
+gen-sources:
+	@echo "The gen-sources target has been removed."
+	@echo "The $(PDK_ROOT)/$(PDK)/SOURCES file is created by volare."
+	@exit 1
+
 # Make README.rst
 README.rst: README.src.rst docs/source/getting-started.rst docs/source/tool-versioning.rst openlane/README.src.rst docs/source/caravel-with-openlane.rst Makefile ./venv/manifest.txt
-	rm -f README.rst && \
+	rm -f README.rst openlane/README.rst && \
 		./venv/bin/rst_include include README.src.rst - | \
 			sed \
 				-e's@\.\/\_static@\/docs\/source\/\_static@g' \
@@ -1304,36 +823,51 @@ README.rst: README.src.rst docs/source/getting-started.rst docs/source/tool-vers
 				-e's@.. warning::@**WARNING:**@g' \
 				> openlane/README.rst
 				
-venv/manifest.txt: ./requirements.txt
+venv/manifest.txt: $(CARAVEL_ROOT)/requirements.txt
 	$(MAKE) check-python
 	rm -rf ./venv
 	$(PYTHON_BIN) -m venv ./venv
 	./venv/bin/python3 -m pip install --upgrade --no-cache-dir pip
-	./venv/bin/python3 -m pip install --upgrade --no-cache-dir -r requirements.txt
+	./venv/bin/python3 -m pip install --upgrade --no-cache-dir -r $(CARAVEL_ROOT)/requirements.txt
 	./venv/bin/python3 -m pip freeze > $@
 
 ###########################################################################
 	
-.RECIPE: manifest
+.PHONY: manifest
 manifest: mag/ maglef/ verilog/rtl/ Makefile
 	touch manifest && \
 	find verilog/rtl/* -type f ! -name "caravel_netlists.v" ! -name "user_*.v" ! -name "README" ! -name "defines.v" -exec shasum {} \; > manifest && \
 	shasum scripts/set_user_id.py scripts/generate_fill.py scripts/compositor.py >> manifest
+	# since the order of files returned by find is indeterminate, sort the final output by filename
+	LC_ALL=C sort -k2,2 -o manifest manifest
 # shasum lef/user_project_wrapper_empty.lef >> manifest
 # find maglef/*.mag -type f ! -name "user_project_wrapper.mag" -exec shasum {} \; >> manifest && \
 # shasum mag/caravel.mag mag/.magicrc >> manifest
 
-.RECIPE: master_manifest
+.PHONY: master_manifest
 master_manifest:
-	find verilog/rtl/* -type f -exec shasum {} \; > master_manifest && \
-	find verilog/gl/* -type f -exec shasum {} \; >> master_manifest && \
+	# to get the shasums of compressed files, first create a list of the compressed files
+	# uncompress them, take the shasums, and then recompress the files
+	shopt -s nullglob; \
+	ls verilog/rtl/*.$(ARCHIVE_EXT) verilog/gl/*.$(ARCHIVE_EXT) lef/*.lef.$(ARCHIVE_EXT) def/*.def.$(ARCHIVE_EXT) mag/*.mag.$(ARCHIVE_EXT) \
+		maglef/*.mag.$(ARCHIVE_EXT) spi/lvs/*.spice.$(ARCHIVE_EXT) gds/*.gds.$(ARCHIVE_EXT) | \
+	sed 's/\.'$(ARCHIVE_EXT)'\>//g' > manifest.compressed.list && sleep 2
+	find verilog/rtl -type f -not -name "*.$(ARCHIVE_EXT)" -exec shasum {} \; > master_manifest && \
+	find verilog/gl -type f -not -name "*.$(ARCHIVE_EXT)" -exec shasum {} \; >> master_manifest && \
 	shasum scripts/set_user_id.py scripts/generate_fill.py scripts/compositor.py >> master_manifest && \
-	find lef/*.lef -type f -exec shasum {} \; >> master_manifest && \
-	find def/*.def -type f -exec shasum {} \; >> master_manifest && \
-	find mag/*.mag -type f  -exec shasum {} \; >> master_manifest && \
-	find maglef/*.mag -type f -exec shasum {} \; >> master_manifest && \
-	find spi/lvs/*.spice -type f -exec shasum {} \; >> master_manifest && \
-	find gds/*.gds -type f -exec shasum {} \; >> master_manifest 
+	find lef -name "*.lef" -type f -exec shasum {} \; >> master_manifest && \
+	find def -name "*.def" -type f -exec shasum {} \; >> master_manifest && \
+	find mag -name "*.mag" -type f  -exec shasum {} \; >> master_manifest && \
+	find maglef -name "*.mag" -type f -exec shasum {} \; >> master_manifest && \
+	find spi/lvs -name "*.spice" -type f -exec shasum {} \; >> master_manifest && \
+	find gds -name "*.gds" -type f -exec shasum {} \; >> master_manifest 
+	# since file compression options may be different, do not uncompress and recompress
+	for file in $$(cat manifest.compressed.list); do \
+		echo "$$( $(UNCOMPRESS) -c $$file | shasum | awk '{print $$1}' )  $$file" >> master_manifest; \
+	done
+	# since the order of files returned by find is indeterminate, sort the final output by filename
+	LC_ALL=C sort -k2,2 -o master_manifest master_manifest
+	rm -rf manifest.compressed.list
 	
 .PHONY: check-env
 check-env:
@@ -1367,7 +901,11 @@ check-python:
 		exit 1;\
 	fi
 	@$(PYTHON_BIN) -c "import sys; assert sys.version_info >= (3, 6), 'Python version less than 3.6'"
-	@echo "Python >=3.8 found."
+	@echo "Python >=3.6 found."
+
+.PHONY: check-gpio-id
+check-gpio-id: check-uid
+	$(CARAVEL_ROOT)/scripts/run_gpio-id_check caravel_$$USER_ID tapeout/outputs/oas/caravel_$$USER_ID.oas*
 
 .PHONY: clean-openlane
 clean-openlane:

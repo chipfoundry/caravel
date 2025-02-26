@@ -28,19 +28,17 @@ import subprocess
 
 def usage():
     print("Usage:")
-    print("compositor.py <user_id_value> <project> <path_to_project> <path_to_mag_dir> <path_to_gds_dir [-keep]")
+    print("compositor.py <user_id_value> <project> <path_to_project> <path_to_mag_dir> <path_to_gds_dir> <path_to_mcw> [-keep]")
     print("")
     print("where:")
     print("   <user_id_value>   is a character string of eight hex digits, and")
+    print("   <project>         is 'caravel', 'caravan', or 'caravel_openframe', and")
     print("   <path_to_project> is the path to the project top level directory.")
     print("   <path_to_mag_dir> is the path to the mag directory.")
     print("   <path_to_gds_dir> is the path to the gds directory.")
+    print("   <path_to_mcw>     is the path to the management core wrapper directory.")
+    print("All arguments are required.")
     print("")
-    print("  If <user_id_value> is not given, then it must exist in the info.yaml file.")
-    print("  If <path_to_project> is not given, then it is assumed to be the cwd.")
-    print("  If <path_to_mag_dir> is not given, then it is assumed to be the <path_to_project>/tmp.")
-    print("  If <path_to_gds_dir> is not given, then it is assumed to be the <path_to_project>/gds.")
-    print("  If '-keep' is specified, then keep the generation script.")
     return 0
 
 if __name__ == '__main__':
@@ -57,7 +55,7 @@ if __name__ == '__main__':
         else:
             arguments.append(option)
 
-    if len(arguments) != 5:
+    if len(arguments) != 6:
         print("Wrong number of arguments given to compositor.py.")
         usage()
         sys.exit(0)
@@ -67,6 +65,7 @@ if __name__ == '__main__':
     user_project_path = arguments[2]
     mag_dir_path = arguments[3]
     gds_dir_path = arguments[4]
+    mcw_dir_path = arguments[5]
 
     # if len(arguments) > 0:
     #     user_id_value = arguments[0]
@@ -164,6 +163,9 @@ if __name__ == '__main__':
     with open(user_project_path + '/mag/compose_final.tcl', 'w') as ofile:
         print('#!/bin/env wish', file=ofile)
         print('drc off', file=ofile)
+        print('crashbackups stop', file=ofile)
+        print('locking disable', file=ofile)
+        print('addpath ' + mcw_dir_path + '/mag', file=ofile)
         # Set the random seed from the project ID
         print('random seed ' + user_id_decimal, file=ofile)
 
@@ -208,14 +210,19 @@ if __name__ == '__main__':
         # Generate final GDS
         print('puts stdout "Writing final GDS. . . "', file=ofile)
         print('flush stdout', file=ofile)
-        print('gds undefined allow', file=ofile)
+        print('#gds undefined allow', file=ofile)
         print('cif *hier write disable', file=ofile)
         print('gds write ' + gdspath + '/' + project_with_id + '.gds', file=ofile)
         print('quit -noprompt', file=ofile)
 
     myenv = os.environ.copy()
     # Abstract views are appropriate for final composition
-    myenv['MAGTYPE'] = 'maglef'
+    myenv['MAGTYPE'] = 'mag'
+
+    if ( not os.path.isfile(magpath + "/" + project + "_core.mag") ):
+        if ( os.path.isfile(magpath + "/" + project + "_core.mag.gz") ):
+            print("Uncompressing " + project + "_core.mag")
+            subprocess.run(['gunzip', magpath + "/" + project + "_core.mag.gz"])
 
     print('Building final GDS file ' + project_with_id + '.gds', flush=True)
 
@@ -248,6 +255,7 @@ if __name__ == '__main__':
                 print(line)
         if mproc.returncode != 0:
             print('ERROR:  Magic exited with status ' + str(mproc.returncode))
+            exit(mproc.returncode)
 
     if not keepmode:
         os.remove(user_project_path + '/mag/compose_final.tcl')
