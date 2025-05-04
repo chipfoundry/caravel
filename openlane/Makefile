@@ -16,7 +16,7 @@
 MAKEFLAGS+=--warn-undefined-variables
 export OPENLANE_RUN_TAG ?= $(shell date '+%y_%m_%d_%H_%M')
 OPENLANE_TAG ?=ed194238ac359aca044c54fa8cbbbd12280e1a8c
-OPENLANE_IMAGE_NAME ?= efabless/openlane:$(OPENLANE_TAG)
+OPENLANE_IMAGE_NAME ?= chipfoundry/openlane:$(OPENLANE_TAG)
 IT_SCRIPT ?= ./interactive.tcl
 designs = $(shell find * -maxdepth 0 -type d)
 current_design = null
@@ -104,8 +104,8 @@ openlane: check-openlane-env
 		fi
 	git clone https://github.com/The-OpenROAD-Project/OpenLane --branch=$(OPENLANE_TAG) --depth=1 $(OPENLANE_ROOT) && \
 		cd $(OPENLANE_ROOT) && \
-		export OPENLANE_IMAGE_NAME=efabless/openlane:$(OPENLANE_TAG) && \
-		export IMAGE_NAME=efabless/openlane:$(OPENLANE_TAG) && \
+		export OPENLANE_IMAGE_NAME=chipfoundry/openlane:$(OPENLANE_TAG) && \
+		export IMAGE_NAME=chipfoundry/openlane:$(OPENLANE_TAG) && \
 		$(MAKE) pull-openlane
 
 .PHONY: check-openlane-env
