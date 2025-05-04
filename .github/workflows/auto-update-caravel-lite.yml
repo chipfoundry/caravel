@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # SPDX-License-Identifier: Apache-2.0
-
 name: Auto Update Caravel Lite
 
 on:
@@ -28,65 +27,15 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq curl
-          pip install git-filter-repo
+      - name: Install git-filter-repo
+        run: pip install git-filter-repo
 
-      - name: Generate JWT
-        id: generate_jwt
-        run: |
-          set -eo pipefail
-          app_id="${{ secrets.GH_APP_ID }}"
-          pem=$(echo "${{ secrets.GH_APP_PEM_B64 }}" | base64 -d)
-
-          now=$(date +%s)
-          iat=$((now - 60))
-          exp=$((now + 600))
-
-          b64enc() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
-
-          header=$(echo -n '{"alg":"RS256","typ":"JWT"}' | b64enc)
-          payload=$(echo -n "{\"iat\":${iat},\"exp\":${exp},\"iss\":${app_id}}" | b64enc)
-
-          header_payload="${header}.${payload}"
-          signature=$(echo -n "$header_payload" | openssl dgst -sha256 -sign <(echo "$pem") | b64enc)
-
-          jwt="${header_payload}.${signature}"
-          echo "JWT=$jwt" >> $GITHUB_ENV
-
-      - name: Debug Installation List
-        run: |
-          jwt=${{ env.JWT }}
-      
-          response=$(curl -s -X GET \
-            -H "Authorization: Bearer $jwt" \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/app/installations)
-      
-          echo "$response"
-
-      - name: Get Installation Access Token
-        id: get_token
-        run: |
-          jwt=${{ env.JWT }}
-
-          response=$(curl -s -X GET \
-            -H "Authorization: Bearer $jwt" \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/app/installations)
-          
-          installation_id=$(echo "$response" | jq '.installations[0].id')
-
-          echo "INSTALLATION_ID=$installation_id" >> $GITHUB_ENV
-
-          token=$(curl -s -X POST \
-            -H "Authorization: Bearer $jwt" \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/app/installations/$installation_id/access_tokens | jq -r '.token')
-
-          echo "IAT=$token" >> $GITHUB_ENV
+      - name: Generate GitHub App token
+        id: generate_token
+        uses: tibdex/github-app-token@v1
+        with:
+          app_id: ${{ secrets.GH_APP_ID }}
+          private_key: ${{ secrets.GH_APP_PRIVATE_KEY }}
 
       - name: Update Caravel Lite
         run: |
@@ -130,6 +79,6 @@ jobs:
             --path mag/caravel_core.mag \
             --path mag/caravan_core.mag \
             --force
-          git remote add caravel_lite https://x-access-token:${{ env.IAT }}@github.com/efabless/caravel-lite
+          git remote add caravel_lite https://x-access-token:${{ steps.generate_token.outputs.token }}@github.com/efabless/caravel-lite
           git push --force caravel_lite main
           git push -f --tags caravel_lite main
