@@ -556,7 +556,7 @@ help:
 # RCX Extraction
 BLOCKS = $(shell cd openlane && find * -maxdepth 0 -type d)
 RCX_BLOCKS = $(foreach block, $(BLOCKS), rcx-$(block))
-OPENLANE_IMAGE_NAME=chipfoundry/openlane:2021.11.25_01.26.14
+OPENLANE_IMAGE_NAME=efabless/openlane:2021.11.25_01.26.14
 $(RCX_BLOCKS): rcx-% : ./def/%.def 
 	echo "Running RC Extraction on $*"
 	mkdir -p ./def/tmp 
@@ -1334,7 +1334,7 @@ sky130:
 		-e PDK_ROOT=$(PDK_ROOT)\
 		-e GIT_COMMITTER_NAME="caravel"\
 		-e GIT_COMMITTER_EMAIL="caravel@caravel.caravel"\
-		chipfoundry/openlane-tools:magic-$(PDK_MAGIC_COMMIT)-centos-7\
+		efabless/openlane-tools:magic-$(PDK_MAGIC_COMMIT)-centos-7\
 		sh -c "\
 			cd $(PDK_ROOT)/open_pdks && \
 			./configure --enable-sky130-pdk=$(PDK_ROOT)/skywater-pdk --enable-sram-sky130 && \
