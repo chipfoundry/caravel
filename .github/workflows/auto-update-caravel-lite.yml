@@ -38,12 +38,16 @@ jobs:
            
       - name: Install git-filter-repo
         run: pip install git-filter-repo
+  
       - name: Generate GitHub App token
         id: generate_token
         uses: tibdex/github-app-token@v1
         with:
           app_id: ${{ secrets.GH_APP_ID }}
           private_key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Print token (debug)
+        run: echo "TOKEN GENERATED"
         
       - name: Update Caravel Lite
         run: |
