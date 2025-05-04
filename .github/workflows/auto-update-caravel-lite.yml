@@ -47,12 +47,9 @@ jobs:
         run: |
           mkdir -p caravel-lite
           cd caravel-lite
-          git config --global user.name 'Efabless Bot'
-          git config --global user.email 'bot@efabless.com'
-          git config --global init.defaultBranch main
           git init
           git checkout -b main
-          git remote add parent https://github.com/efabless/caravel
+          git remote add parent https://github.com/chipfoundry/caravel
           git pull parent main
           git fetch --all --tags
           git filter-repo \
@@ -85,6 +82,6 @@ jobs:
             --path mag/caravel_core.mag \
             --path mag/caravan_core.mag \
             --force
-          git remote add caravel_lite https://x-access-token:${{ steps.generate_token.outputs.token }}@github.com/efabless/caravel-lite
+          git remote add caravel_lite https://x-access-token:${{ steps.generate_token.outputs.token }}@github.com/chipfoundry/caravel-lite
           git push --force caravel_lite main
           git push -f --tags caravel_lite main
