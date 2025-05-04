@@ -62,11 +62,11 @@ MCW_LITE?=1
 
 ifeq ($(MCW),LITEX_VEXRISCV)
 	MCW_NAME := mcw-litex-vexriscv
-	MCW_REPO ?= https://github.com/efabless/caravel_mgmt_soc_litex
+	MCW_REPO ?= https://github.com/chipfoundry/caravel_mgmt_soc_litex
 	MCW_TAG ?= $(MPW_TAG)
 else
 	MCW_NAME := mcw-pico
-	MCW_REPO ?= https://github.com/efabless/caravel_pico
+	MCW_REPO ?= https://github.com/chipfoundry/caravel_pico
 	MCW_TAG ?= $(MPW_TAG)
 endif
 
@@ -556,7 +556,7 @@ help:
 # RCX Extraction
 BLOCKS = $(shell cd openlane && find * -maxdepth 0 -type d)
 RCX_BLOCKS = $(foreach block, $(BLOCKS), rcx-$(block))
-OPENLANE_IMAGE_NAME=efabless/openlane:2021.11.25_01.26.14
+OPENLANE_IMAGE_NAME=chipfoundry/openlane:2021.11.25_01.26.14
 $(RCX_BLOCKS): rcx-% : ./def/%.def 
 	echo "Running RC Extraction on $*"
 	mkdir -p ./def/tmp 
@@ -1334,7 +1334,7 @@ sky130:
 		-e PDK_ROOT=$(PDK_ROOT)\
 		-e GIT_COMMITTER_NAME="caravel"\
 		-e GIT_COMMITTER_EMAIL="caravel@caravel.caravel"\
-		efabless/openlane-tools:magic-$(PDK_MAGIC_COMMIT)-centos-7\
+		chipfoundry/openlane-tools:magic-$(PDK_MAGIC_COMMIT)-centos-7\
 		sh -c "\
 			cd $(PDK_ROOT)/open_pdks && \
 			./configure --enable-sky130-pdk=$(PDK_ROOT)/skywater-pdk --enable-sram-sky130 && \
@@ -1411,9 +1411,9 @@ README.rst: README.src.rst docs/source/getting-started.rst docs/source/tool-vers
 				> README.rst && \
 		rst_include include openlane/README.src.rst - | \
 			sed \
-				-e's@https://github.com/efabless/caravel/blob/master/verilog@../verilog@g' \
+				-e's@https://github.com/chipfoundry/caravel/blob/master/verilog@../verilog@g' \
 				-e's@:ref:`getting-started`@`README.rst <../README.rst>`__@g' \
-				-e's@https://github.com/efabless/caravel/blob/master/openlane/@./@g' \
+				-e's@https://github.com/chipfoundry/caravel/blob/master/openlane/@./@g' \
 				-e's@.. note::@**NOTE:**@g' \
 				-e's@.. warning::@**WARNING:**@g' \
 				> openlane/README.rst
