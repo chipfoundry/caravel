@@ -56,15 +56,28 @@ jobs:
           jwt="${header_payload}.${signature}"
           echo "JWT=$jwt" >> $GITHUB_ENV
 
+      - name: Debug Installation List
+        run: |
+          jwt=${{ env.JWT }}
+      
+          response=$(curl -s -X GET \
+            -H "Authorization: Bearer $jwt" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/app/installations)
+      
+          echo "$response"
+
       - name: Get Installation Access Token
         id: get_token
         run: |
           jwt=${{ env.JWT }}
 
-          installation_id=$(curl -s -X GET \
+          response=$(curl -s -X GET \
             -H "Authorization: Bearer $jwt" \
             -H "Accept: application/vnd.github+json" \
-            https://api.github.com/app/installations | jq '.[0].id')
+            https://api.github.com/app/installations)
+          
+          installation_id=$(echo "$response" | jq '.installations[0].id')
 
           echo "INSTALLATION_ID=$installation_id" >> $GITHUB_ENV
 
