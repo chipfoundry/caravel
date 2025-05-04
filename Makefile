@@ -62,11 +62,11 @@ MCW_LITE?=1
 
 ifeq ($(MCW),LITEX_VEXRISCV)
 	MCW_NAME := mcw-litex-vexriscv
-	MCW_REPO ?= https://github.com/efabless/caravel_mgmt_soc_litex
+	MCW_REPO ?= https://github.com/chipfoundry/caravel_mgmt_soc_litex
 	MCW_TAG ?= $(MPW_TAG)
 else
 	MCW_NAME := mcw-pico
-	MCW_REPO ?= https://github.com/efabless/caravel_pico
+	MCW_REPO ?= https://github.com/chipfoundry/caravel_pico
 	MCW_TAG ?= $(MPW_TAG)
 endif
 
@@ -1411,9 +1411,9 @@ README.rst: README.src.rst docs/source/getting-started.rst docs/source/tool-vers
 				> README.rst && \
 		rst_include include openlane/README.src.rst - | \
 			sed \
-				-e's@https://github.com/efabless/caravel/blob/master/verilog@../verilog@g' \
+				-e's@https://github.com/chipfoundry/caravel/blob/master/verilog@../verilog@g' \
 				-e's@:ref:`getting-started`@`README.rst <../README.rst>`__@g' \
-				-e's@https://github.com/efabless/caravel/blob/master/openlane/@./@g' \
+				-e's@https://github.com/chipfoundry/caravel/blob/master/openlane/@./@g' \
 				-e's@.. note::@**NOTE:**@g' \
 				-e's@.. warning::@**WARNING:**@g' \
 				> openlane/README.rst
