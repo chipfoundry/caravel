@@ -1268,21 +1268,21 @@ endif
 
 ###########################################################################
 
-.PHONY: pdk-with-volare
-pdk-with-volare: check-python install-volare 
-	./venv/bin/volare enable ${OPEN_PDKS_COMMIT}
+.PHONY: pdk-with-ciel
+pdk-with-ciel: check-python install-ciel 
+	./venv/bin/ciel enable ${OPEN_PDKS_COMMIT}
 
 check-python:
 ifeq ($(shell which python3),)
 $(error Please install python 3.6+)
 endif
 
-.PHONY: install-volare
-install-volare:
+.PHONY: install-ciel
+install-ciel:
 	rm -rf ./venv
 	$(PYTHON_BIN) -m venv ./venv
 	./venv/bin/$(PYTHON_BIN) -m pip install --upgrade --no-cache-dir pip
-	./venv/bin/$(PYTHON_BIN) -m pip install --upgrade --no-cache-dir volare
+	./venv/bin/$(PYTHON_BIN) -m pip install --upgrade --no-cache-dir ciel
 
 
 ###########################################################################
