@@ -1,0 +1,21 @@
+# OpenFrame GL includes
+# Caravel/OpenFrame padframe and infrastructure - gate level
+
+# PDK cells
+-v $(PDK_ROOT)/$(PDK)/libs.ref/sky130_fd_io/verilog/sky130_fd_io.v
+-v $(PDK_ROOT)/$(PDK)/libs.ref/sky130_fd_io/verilog/sky130_ef_io.v
+-v $(PDK_ROOT)/$(PDK)/libs.ref/sky130_fd_sc_hd/verilog/primitives.v
+-v $(PDK_ROOT)/$(PDK)/libs.ref/sky130_fd_sc_hd/verilog/sky130_fd_sc_hd.v
+-v $(PDK_ROOT)/$(PDK)/libs.ref/sky130_fd_sc_hvl/verilog/primitives.v
+-v $(PDK_ROOT)/$(PDK)/libs.ref/sky130_fd_sc_hvl/verilog/sky130_fd_sc_hvl.v
+
+# OpenFrame GL netlists
+-v $(CARAVEL_VERILOG_PATH)/rtl/defines.v
+-v $(CARAVEL_VERILOG_PATH)/rtl/user_defines.v
+-v $(CARAVEL_VERILOG_PATH)/rtl/pads.v
+-v $(CARAVEL_VERILOG_PATH)/gl/user_id_programming.v
+-v $(CARAVEL_VERILOG_PATH)/gl/chip_io_openframe.v
+-v $(CARAVEL_VERILOG_PATH)/gl/constant_block.v
+-v $(CARAVEL_VERILOG_PATH)/gl/xres_buf.v
+-v $(CARAVEL_VERILOG_PATH)/gl/caravel_openframe.v
+-v $(CARAVEL_VERILOG_PATH)/rtl/simple_por.v
