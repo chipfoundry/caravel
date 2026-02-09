@@ -173,6 +173,8 @@ caravel uut (
 		.resetb	  (resetb_tb)
 	);
 
+	// SPI flash is optional for OpenFrame - only instantiate if USE_SPIFLASH is defined
+	`ifdef USE_SPIFLASH
     spiflash #(
         .FILENAME(FILENAME)
     ) spiflash (
@@ -183,6 +185,8 @@ caravel uut (
         .io2(mprj_io_tb[36]),
         .io3(mprj_io_tb[37])
     );
+	`endif // USE_SPIFLASH
+
 	// do anything to the unused wires so cocotb can read them when iverilog is used
 	// apparently iverilog can't read the unused wires and that causes an error in python 
 	assign gpio_tb = 0; 
