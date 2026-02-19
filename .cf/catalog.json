@@ -1,0 +1,20 @@
+{
+  "$schema_version": "1",
+  "name": "caravel",
+  "title": "Caravel",
+  "slug": "caravel",
+  "short_description": "Caravel is a versatile SoC template for custom chip design, integrating RISC-V and multiple interfaces within the chipIgnite framework.",
+  "section": "reference_designs",
+  "category": "System-on-Chip (SoC)",
+  "subcategory": "SoC Template",
+  "tags": "SoC, System on Chip, RISC-V, Wishbone bus",
+  "maturity": "Validated",
+  "technology": "sky130",
+  "price": "Free",
+  "status": "Available",
+  "certification": "Uncertified",
+  "foundry": "SkyWater",
+  "node": "130nm",
+  "license_type": "Apache 2.0",
+  "documentation_url": "https://github.com/chipfoundry/caravel"
+}
