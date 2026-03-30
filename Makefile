@@ -31,7 +31,10 @@ SPLIT_FILES := $(shell find . -type f -name "*.$(ARCHIVE_EXT).00.split")
 SPLIT_FILES_SOURCES := $(basename $(basename $(basename $(SPLIT_FILES))))
 
 # Needed to uncompress the existing archives
-ARCHIVES := $(shell find . -type f -not -path "*/signoff/*" -name "*.$(ARCHIVE_EXT)")
+ARCHIVES := $(shell find . -type f \
+	-not -path "*/signoff/*" \
+	-not -path "*/precheck_results/*" \
+	-name "*.$(ARCHIVE_EXT)")
 ARCHIVE_SOURCES := $(basename $(ARCHIVES))
 
 # Needed to compress and split files/archives that are too large
